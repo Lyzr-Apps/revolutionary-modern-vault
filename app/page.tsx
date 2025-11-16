@@ -118,6 +118,35 @@ interface FormErrors {
   [key: string]: string
 }
 
+function SetupInstructions() {
+  const [isVisible, setIsVisible] = useState(true)
+
+  if (!isVisible) return null
+
+  return (
+    <Alert className="mb-6 border-amber-200 bg-amber-50">
+      <AlertCircle className="h-4 w-4 text-amber-600" />
+      <AlertDescription className="text-amber-800">
+        <p className="font-semibold mb-2">Email Setup Required</p>
+        <p className="text-sm mb-3">To send confirmation emails to your inbox, add these environment variables to <code className="bg-white px-2 py-1 rounded text-xs">.env.local</code>:</p>
+        <div className="bg-white p-3 rounded text-xs font-mono mb-3 border border-amber-200 overflow-x-auto">
+          GMAIL_USER=your-email@gmail.com<br/>
+          GMAIL_PASSWORD=your-app-password
+        </div>
+        <p className="text-sm mb-2">
+          For Gmail accounts with 2FA enabled, use an <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener noreferrer" className="underline text-amber-700 hover:text-amber-900">App Password</a> instead of your regular password.
+        </p>
+        <button
+          onClick={() => setIsVisible(false)}
+          className="text-xs underline text-amber-700 hover:text-amber-900 mt-2"
+        >
+          Dismiss
+        </button>
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 export default function EventRegistrationPage() {
   const [currentPage, setCurrentPage] = useState<PageView>('registration')
   const [registrationType, setRegistrationType] = useState<RegistrationType>(null)
@@ -167,6 +196,55 @@ export default function EventRegistrationPage() {
     return Object.keys(newErrors).length === 0
   }
 
+  const sendConfirmationEmail = async (registration: Registration) => {
+    try {
+      const registrationData =
+        registration.type === 'attendee'
+          ? {
+              registrationId: registration.id,
+              fullName: registration.fullName,
+              email: registration.email,
+              contactNumber: registration.contactNumber,
+              emergencyContact: registration.emergencyContact,
+            }
+          : {
+              registrationId: registration.id,
+              businessName: registration.businessName,
+              contactPerson: registration.contactPerson,
+              email: registration.email,
+              phone: registration.phone,
+              businessCategory: registration.businessCategory,
+              staffCount: registration.staffCount,
+            }
+
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipientEmail: registration.email,
+          registrationType: registration.type,
+          registrationData,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        const updatedRegistrations = registrations.map((reg) =>
+          reg.id === registration.id ? { ...reg, emailStatus: 'sent' as const } : reg
+        )
+        setRegistrations(updatedRegistrations)
+        return true
+      } else {
+        console.error('Email sending failed:', data.error)
+        return false
+      }
+    } catch (error) {
+      console.error('Email error:', error)
+      return false
+    }
+  }
+
   const triggerEmailAgent = async (registration: Registration) => {
     try {
       const agentId = registration.type === 'attendee' ? '69199ff81034d49d53cbf668' : '6919a0201034d49d53cbf66a'
@@ -188,10 +266,8 @@ export default function EventRegistrationPage() {
       const data = await response.json()
 
       if (data.success) {
-        const updatedRegistrations = registrations.map((reg) =>
-          reg.id === registration.id ? { ...reg, emailStatus: 'sent' as const } : reg
-        )
-        setRegistrations(updatedRegistrations)
+        // Send confirmation email after agent response
+        await sendConfirmationEmail(registration)
         return true
       }
       return false
@@ -370,6 +446,7 @@ export default function EventRegistrationPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {currentPage === 'registration' && <SetupInstructions />}
         {currentPage === 'registration' && (
           <div className="max-w-2xl mx-auto">
             {/* Registration Type Selector */}
